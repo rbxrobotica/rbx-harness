@@ -1,0 +1,270 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://rbxsystems.com/schemas/rbx-harness/v0.1/governance",
+  "title": "RBX Governance Event Schema",
+  "description": "Schema for governance events emitted by the rbx-harness runtime. These events represent audit records, human review triggers, and approval workflow state transitions.",
+  "definitions": {
+    "AgentRef": {
+      "type": "object",
+      "required": ["agent_id", "agent_version"],
+      "properties": {
+        "agent_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+-v[0-9]+$"
+        },
+        "agent_version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        }
+      }
+    },
+    "EventEnvelope": {
+      "type": "object",
+      "required": ["event_id", "event_type", "agent", "cycle_id", "timestamp", "payload"],
+      "properties": {
+        "event_id": {
+          "type": "string",
+          "description": "ULID — monotonically sortable unique event identifier"
+        },
+        "event_type": {
+          "type": "string",
+          "description": "Namespaced event type (e.g., 'governance.review_triggered')"
+        },
+        "agent": {
+          "$ref": "#/definitions/AgentRef"
+        },
+        "cycle_id": {
+          "type": "string",
+          "description": "Execution cycle that produced this event"
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "payload": {
+          "type": "object"
+        },
+        "sha256": {
+          "type": "string",
+          "description": "SHA256 hash of the canonical JSON payload — used for append-only deduplication"
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "title": "CycleStarted",
+      "description": "Emitted at the beginning of every execution cycle.",
+      "allOf": [{"$ref": "#/definitions/EventEnvelope"}],
+      "properties": {
+        "event_type": {"const": "harness.cycle_started"},
+        "payload": {
+          "type": "object",
+          "required": ["trigger_type", "queue_depth"],
+          "properties": {
+            "trigger_type": {
+              "type": "string",
+              "enum": ["external_signal", "operator_command", "timer", "internal"]
+            },
+            "queue_depth": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "CycleCompleted",
+      "description": "Emitted at the end of every execution cycle.",
+      "allOf": [{"$ref": "#/definitions/EventEnvelope"}],
+      "properties": {
+        "event_type": {"const": "harness.cycle_completed"},
+        "payload": {
+          "type": "object",
+          "required": ["duration_ms", "events_produced", "outcome"],
+          "properties": {
+            "duration_ms": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "events_produced": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "outcome": {
+              "type": "string",
+              "enum": ["completed", "no_action", "blocked", "failed"]
+            },
+            "stage_durations_ms": {
+              "type": "object",
+              "description": "Duration of each pipeline stage",
+              "properties": {
+                "observe": {"type": "integer"},
+                "interpret": {"type": "integer"},
+                "decide": {"type": "integer"},
+                "act": {"type": "integer"},
+                "evaluate": {"type": "integer"},
+                "persist": {"type": "integer"}
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "PermissionCheck",
+      "description": "Emitted when the sandbox evaluates whether an action is permitted.",
+      "allOf": [{"$ref": "#/definitions/EventEnvelope"}],
+      "properties": {
+        "event_type": {"const": "harness.permission_check"},
+        "payload": {
+          "type": "object",
+          "required": ["action_type", "decision"],
+          "properties": {
+            "action_type": {
+              "type": "string",
+              "description": "The action being evaluated"
+            },
+            "decision": {
+              "type": "string",
+              "enum": ["allowed", "denied", "deferred_to_human"]
+            },
+            "reason": {
+              "type": "string",
+              "description": "Why the decision was made"
+            },
+            "rule_matched": {
+              "type": "string",
+              "description": "Which manifest rule matched (e.g., 'capabilities.cannot_do[2]')"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "ReviewTriggered",
+      "description": "Emitted when a governance condition triggers a human review requirement.",
+      "allOf": [{"$ref": "#/definitions/EventEnvelope"}],
+      "properties": {
+        "event_type": {"const": "governance.review_triggered"},
+        "payload": {
+          "type": "object",
+          "required": ["condition", "blocking", "reviewer_role"],
+          "properties": {
+            "condition": {
+              "type": "string",
+              "description": "The manifest condition that was triggered"
+            },
+            "blocking": {
+              "type": "boolean",
+              "description": "Whether execution is halted pending review"
+            },
+            "reviewer_role": {
+              "type": "string"
+            },
+            "review_sla": {
+              "type": "string"
+            },
+            "review_id": {
+              "type": "string",
+              "description": "Unique ID for tracking this review request"
+            },
+            "context": {
+              "type": "object",
+              "description": "Relevant context for the reviewer"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "ReviewCompleted",
+      "description": "Emitted when a human completes a governance review.",
+      "allOf": [{"$ref": "#/definitions/EventEnvelope"}],
+      "properties": {
+        "event_type": {"const": "governance.review_completed"},
+        "payload": {
+          "type": "object",
+          "required": ["review_id", "decision", "reviewer"],
+          "properties": {
+            "review_id": {
+              "type": "string"
+            },
+            "decision": {
+              "type": "string",
+              "enum": ["approved", "rejected", "modified"]
+            },
+            "reviewer": {
+              "type": "string"
+            },
+            "rationale": {
+              "type": "string"
+            },
+            "modifications": {
+              "type": "object",
+              "description": "If decision is 'modified', what was changed"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "CircuitBreakerActivated",
+      "description": "Emitted when the safety circuit breaker trips, halting execution.",
+      "allOf": [{"$ref": "#/definitions/EventEnvelope"}],
+      "properties": {
+        "event_type": {"const": "harness.circuit_breaker_activated"},
+        "payload": {
+          "type": "object",
+          "required": ["reason", "threshold_breached"],
+          "properties": {
+            "reason": {
+              "type": "string"
+            },
+            "threshold_breached": {
+              "type": "string",
+              "description": "Which resource or risk threshold was exceeded"
+            },
+            "value_at_breach": {
+              "type": "number"
+            },
+            "threshold_value": {
+              "type": "number"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "ReconciliationEvent",
+      "description": "Emitted on crash recovery when EventLog state diverges from external system state.",
+      "allOf": [{"$ref": "#/definitions/EventEnvelope"}],
+      "properties": {
+        "event_type": {"const": "harness.reconciliation"},
+        "payload": {
+          "type": "object",
+          "required": ["outcome", "discrepancies"],
+          "properties": {
+            "outcome": {
+              "type": "string",
+              "enum": ["clean", "diverged_adopted_external", "diverged_manual_required"]
+            },
+            "discrepancies": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["field", "eventlog_value", "external_value"],
+                "properties": {
+                  "field": {"type": "string"},
+                  "eventlog_value": {},
+                  "external_value": {}
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

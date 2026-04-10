@@ -1,0 +1,481 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://rbxsystems.com/schemas/rbx-harness/v0.1/manifest",
+  "title": "RBX Agent Manifest",
+  "description": "Schema for declaring an RBX agent: its capabilities, limitations, interface, governance requirements, and operational configuration. Every RBX agent must have a valid manifest before it can be activated.",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "version",
+    "status",
+    "description",
+    "role",
+    "capabilities",
+    "limitations",
+    "interface",
+    "governance",
+    "resources",
+    "operational"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+-v[0-9]+$",
+      "description": "Unique agent identifier with major version suffix. Example: robson-v3, strategos-risk-v1",
+      "examples": ["robson-v3", "strategos-risk-v1", "thalamus-router-v1"]
+    },
+    "name": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 100,
+      "description": "Human-readable agent name"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "Semantic version of this manifest (e.g., 1.0.0)"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "active", "suspended", "retired"],
+      "description": "Lifecycle status. Only 'active' agents may receive requests."
+    },
+    "description": {
+      "type": "string",
+      "minLength": 50,
+      "maxLength": 1000,
+      "description": "Detailed description of agent purpose and scope. Must be honest about what the agent does AND what it does not do."
+    },
+    "role": {
+      "type": "string",
+      "enum": ["executor", "advisor", "analyst", "signal-generator", "router", "orchestrator"],
+      "description": "Agent role classification. 'executor' agents take actions in external systems; all others are advisory or analytical."
+    },
+    "product": {
+      "type": "string",
+      "enum": ["robson", "strategos", "thalamus", "truthmetal", "eden", "platform"],
+      "description": "Which RBX product this agent belongs to"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9-]+$"
+      },
+      "minItems": 1,
+      "maxItems": 10,
+      "uniqueItems": true,
+      "description": "Searchable metadata tags"
+    },
+    "capabilities": {
+      "type": "object",
+      "required": ["inputs", "processing", "outputs"],
+      "description": "What this agent can do. Capabilities must be exhaustive — undeclared capabilities are not permitted.",
+      "properties": {
+        "inputs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["type", "description"],
+            "properties": {
+              "type": {
+                "type": "string",
+                "description": "Input type identifier"
+              },
+              "description": {
+                "type": "string",
+                "minLength": 10,
+                "description": "What this input represents"
+              },
+              "required_fields": {
+                "type": "array",
+                "items": {"type": "string"}
+              },
+              "schema_ref": {
+                "type": "string",
+                "description": "Relative path to the JSON schema for this input type"
+              }
+            }
+          }
+        },
+        "processing": {
+          "type": "object",
+          "required": ["modes"],
+          "properties": {
+            "modes": {
+              "type": "array",
+              "minItems": 1,
+              "items": {"type": "string"},
+              "description": "Processing modes this agent supports (e.g., 'real-time', 'batch', 'on-demand')"
+            },
+            "analysis_types": {
+              "type": "array",
+              "items": {"type": "string"},
+              "description": "Types of analysis or reasoning the agent performs"
+            },
+            "max_concurrent_requests": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Maximum simultaneous requests this agent can handle"
+            }
+          }
+        },
+        "outputs": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["type", "format"],
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "format": {
+                "type": "string",
+                "enum": ["structured-json", "natural-language", "event", "command", "signal"]
+              },
+              "schema_ref": {
+                "type": "string",
+                "description": "Relative path to the JSON schema for this output type"
+              }
+            }
+          }
+        }
+      }
+    },
+    "limitations": {
+      "type": "object",
+      "required": ["cannot_do", "should_defer", "known_limitations"],
+      "description": "What this agent cannot do. Limitations are as important as capabilities.",
+      "properties": {
+        "cannot_do": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 10
+          },
+          "description": "Hard boundaries. Actions or decisions this agent is absolutely prohibited from taking."
+        },
+        "should_defer": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 10
+          },
+          "description": "Conditions under which this agent must defer to a human or another agent rather than acting autonomously."
+        },
+        "known_limitations": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 10
+          },
+          "description": "Honest assessment of this agent's weaknesses, blind spots, and failure modes."
+        }
+      }
+    },
+    "interface": {
+      "type": "object",
+      "required": ["protocol_version", "request_schema", "response_schema"],
+      "description": "How this agent communicates with the Thalamus mediation layer.",
+      "properties": {
+        "protocol_version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+$",
+          "description": "Thalamus protocol version this agent implements (e.g., '1.0')"
+        },
+        "request_schema": {
+          "type": "string",
+          "description": "Relative path to the JSON schema for incoming requests"
+        },
+        "response_schema": {
+          "type": "string",
+          "description": "Relative path to the JSON schema for outgoing responses"
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 600,
+          "description": "Maximum processing time before the harness considers the request failed"
+        },
+        "max_retries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5,
+          "default": 3
+        },
+        "authentication": {
+          "type": "string",
+          "enum": ["thalamus-managed", "mutual-tls", "api-key"],
+          "default": "thalamus-managed"
+        },
+        "rate_limit": {
+          "type": "string",
+          "pattern": "^[0-9]+ per (second|minute|hour|day)$",
+          "description": "Rate limit for incoming requests (e.g., '100 per minute')"
+        }
+      }
+    },
+    "governance": {
+      "type": "object",
+      "required": ["audit_level"],
+      "description": "Governance configuration. Defines when human review is required and what is audited.",
+      "properties": {
+        "human_review_required": {
+          "type": "array",
+          "description": "Conditions that trigger mandatory human review before or after an action.",
+          "items": {
+            "type": "object",
+            "required": ["condition", "blocking"],
+            "properties": {
+              "condition": {
+                "type": "string",
+                "description": "Human-readable description of the condition that triggers review"
+              },
+              "reviewer_role": {
+                "type": "string",
+                "description": "The role (team or individual) responsible for the review"
+              },
+              "review_sla": {
+                "type": "string",
+                "description": "Maximum time the agent waits for review (e.g., '4h', '24h')"
+              },
+              "blocking": {
+                "type": "boolean",
+                "description": "If true, the agent halts execution until review is completed"
+              },
+              "escalation_after": {
+                "type": "string",
+                "description": "Escalation action if review_sla expires without a decision"
+              }
+            }
+          }
+        },
+        "audit_level": {
+          "type": "string",
+          "enum": ["basic", "full"],
+          "description": "'basic' logs cycle start/end and errors. 'full' logs every stage transition and all decisions. Audit cannot be disabled."
+        },
+        "output_retention": {
+          "type": "string",
+          "description": "How long to retain agent outputs (e.g., '30d', '1y')"
+        },
+        "approval_required_for": {
+          "type": "array",
+          "description": "Changes to this agent that require explicit approval before deployment.",
+          "items": {
+            "type": "string",
+            "enum": [
+              "capability_expansion",
+              "role_change",
+              "access_to_new_data_sources",
+              "integration_with_external_systems",
+              "output_schema_changes",
+              "rate_limit_increase",
+              "governance_relaxation",
+              "audit_level_reduction"
+            ]
+          }
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "required": ["compute", "tokens"],
+      "description": "Resource budget declarations. The harness enforces these limits.",
+      "properties": {
+        "compute": {
+          "type": "object",
+          "required": ["cpu_cores", "memory_gb"],
+          "properties": {
+            "cpu_cores": {
+              "type": "number",
+              "minimum": 0.1
+            },
+            "memory_gb": {
+              "type": "number",
+              "minimum": 0.1
+            },
+            "gpu_required": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        },
+        "tokens": {
+          "type": "object",
+          "required": ["max_per_request"],
+          "description": "LLM token budget. Applies only to agents that call LLM APIs.",
+          "properties": {
+            "max_per_request": {
+              "type": "integer",
+              "minimum": 100,
+              "description": "Hard limit on tokens consumed per single request"
+            },
+            "estimated_monthly": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Estimated token consumption per month for capacity planning"
+            },
+            "context_window": {
+              "type": "integer",
+              "minimum": 1000,
+              "description": "Maximum context window this agent is allowed to use"
+            }
+          }
+        },
+        "storage": {
+          "type": "object",
+          "properties": {
+            "logs_gb_per_month": {
+              "type": "number",
+              "minimum": 0
+            },
+            "state_gb": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Persistent state storage budget"
+            }
+          }
+        }
+      }
+    },
+    "dependencies": {
+      "type": "object",
+      "description": "Other agents and external systems this agent depends on.",
+      "properties": {
+        "required_agents": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+-v[0-9]+$"
+          },
+          "description": "Agent IDs this agent requires to be active"
+        },
+        "data_sources": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["source", "access_level", "pii_included"],
+            "properties": {
+              "source": {"type": "string"},
+              "access_level": {
+                "type": "string",
+                "enum": ["read-only", "read-write"]
+              },
+              "pii_included": {"type": "boolean"}
+            }
+          }
+        },
+        "external_services": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["service", "purpose"],
+            "properties": {
+              "service": {"type": "string"},
+              "purpose": {"type": "string"},
+              "fallback_behavior": {
+                "type": "string",
+                "description": "What the agent does when this service is unavailable"
+              }
+            }
+          }
+        }
+      }
+    },
+    "operational": {
+      "type": "object",
+      "required": ["owner", "documentation"],
+      "properties": {
+        "owner": {
+          "type": "string",
+          "description": "Team or person responsible for this agent (email or Slack handle)"
+        },
+        "maintainer": {
+          "type": "string",
+          "description": "Technical maintainer contact"
+        },
+        "documentation": {
+          "type": "string",
+          "description": "Relative path to the agent README"
+        },
+        "source": {
+          "type": "string",
+          "description": "Relative path to the agent implementation directory"
+        },
+        "tests": {
+          "type": "string",
+          "description": "Relative path to the test directory"
+        },
+        "monitoring": {
+          "type": "object",
+          "properties": {
+            "success_rate_threshold": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Minimum acceptable success rate (0.0–1.0) before alerting"
+            },
+            "latency_p95_ms": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Maximum acceptable p95 latency in milliseconds"
+            },
+            "alert_on_degradation": {
+              "type": "boolean",
+              "default": true
+            }
+          }
+        },
+        "deployment": {
+          "type": "object",
+          "properties": {
+            "environment": {
+              "type": "string",
+              "enum": ["development", "staging", "production"]
+            },
+            "rollout_strategy": {
+              "type": "string",
+              "enum": ["direct", "canary", "blue-green"]
+            },
+            "rollback_trigger": {
+              "type": "string",
+              "description": "Condition that triggers automatic rollback"
+            }
+          }
+        }
+      }
+    },
+    "changelog": {
+      "type": "array",
+      "description": "Per-version change history for this manifest.",
+      "items": {
+        "type": "object",
+        "required": ["version", "date", "changes"],
+        "properties": {
+          "version": {
+            "type": "string",
+            "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "changes": {
+            "type": "string"
+          },
+          "approved_by": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

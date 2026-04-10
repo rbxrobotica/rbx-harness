@@ -1,0 +1,159 @@
+# Example manifest: Robson v3
+# This is a reference example showing how an existing RBX agent (Robson)
+# would declare itself using the rbx-harness manifest schema.
+
+id: robson-v3
+name: Robson Trading Risk Manager
+version: 3.0.0
+status: active
+product: robson
+description: >
+  Robson is the RBX Systems trading risk management agent. It manages the lifecycle
+  of trading positions on Binance, enforces risk limits, and executes operator-approved
+  trades. Robson is NOT an autonomous trading bot — it is a governed execution system
+  that requires human-defined parameters and responds to human-issued signals.
+
+role: executor
+
+tags:
+  - trading
+  - risk-management
+  - execution
+  - binance
+
+capabilities:
+  inputs:
+    - type: detector_signal
+      description: Entry signal from a detector indicating a potential trade opportunity with confidence score
+      required_fields: [signal_id, symbol, side, entry_price, tech_stop, confidence]
+      schema_ref: schemas/request.schema.json
+
+    - type: operator_command
+      description: Direct command from an authorized operator (Arm, Disarm, Pause, Resume, Panic, AdjustRisk)
+      required_fields: [command, params, issued_at]
+
+    - type: market_tick
+      description: Real-time price tick from Binance WebSocket used for trailing stop evaluation
+      required_fields: [symbol, bid, ask, timestamp]
+
+    - type: order_fill
+      description: Order fill notification from Binance WebSocket for position state transitions
+      required_fields: [order_id, fill_price, fill_quantity, commission, timestamp]
+
+  processing:
+    modes:
+      - real-time
+    analysis_types:
+      - trailing_stop_evaluation
+      - position_sizing_via_golden_rule
+      - risk_limit_enforcement
+      - circuit_breaker_evaluation
+    max_concurrent_requests: 1
+
+  outputs:
+    - type: trade_execution
+      format: event
+      schema_ref: schemas/response.schema.json
+    - type: risk_decision
+      format: structured-json
+    - type: position_state_update
+      format: event
+
+limitations:
+  cannot_do:
+    - "Execute trades without a prior validated DetectorSignal — Robson does not self-initiate entries"
+    - "Override risk limits declared in the active RiskConfig — limits are immutable during a cycle"
+    - "Execute trades when the circuit breaker is open — all entry orders are automatically denied"
+    - "Modify its own manifest or governance configuration at runtime"
+    - "Access account balances beyond what is required for position sizing calculations"
+
+  should_defer:
+    - "Any position with a drawdown exceeding the daily loss limit — defer to operator for manual review"
+    - "Reconciliation discrepancies between EventLog state and Binance state — defer to operator"
+    - "Any signal with confidence below 0.3 — defer to human signal review"
+    - "Circuit breaker reset decisions — only the operator may reset the circuit breaker"
+
+  known_limitations:
+    - "Robson operates on Binance only — no support for other exchanges in v3"
+    - "Position sizing uses the Golden Rule formula which assumes a single active position per symbol"
+    - "Market tick processing may drop ticks when queue depth exceeds 800 — not all ticks are processed"
+    - "Crash recovery adopts Binance state as truth in case of discrepancy — EventLog state may be stale"
+
+interface:
+  protocol_version: "1.0"
+  request_schema: schemas/request.schema.json
+  response_schema: schemas/response.schema.json
+  timeout_seconds: 30
+  max_retries: 3
+  authentication: thalamus-managed
+  rate_limit: "100 per minute"
+
+governance:
+  audit_level: full
+  output_retention: 1y
+  human_review_required:
+    - condition: "Daily loss limit approaches within 20% of threshold"
+      reviewer_role: risk-operator
+      review_sla: 1h
+      blocking: false
+      escalation_after: "Alert senior risk officer"
+
+    - condition: "Reconciliation discrepancy detected between EventLog and Binance state"
+      reviewer_role: risk-operator
+      review_sla: 30m
+      blocking: true
+      escalation_after: "Halt all trading activity"
+
+    - condition: "Circuit breaker activation"
+      reviewer_role: risk-operator
+      review_sla: 15m
+      blocking: true
+      escalation_after: "Page on-call"
+
+  approval_required_for:
+    - capability_expansion
+    - access_to_new_data_sources
+    - governance_relaxation
+    - audit_level_reduction
+
+resources:
+  compute:
+    cpu_cores: 1
+    memory_gb: 2
+    gpu_required: false
+  tokens:
+    max_per_request: 0
+    estimated_monthly: 0
+    context_window: 0
+  storage:
+    logs_gb_per_month: 5
+    state_gb: 1
+
+dependencies:
+  external_services:
+    - service: binance-websocket
+      purpose: Real-time market data (ticks, order fills)
+      fallback_behavior: Halt execution and alert operator on disconnect for more than 5 seconds
+    - service: binance-rest-api
+      purpose: Order placement and account queries
+      fallback_behavior: Retry 3 times with exponential backoff; if all fail, log OrderFailed and continue cycle
+
+operational:
+  owner: platform@rbxsystems.com
+  documentation: README.md
+  source: v2/robsond/
+  tests: v2/robsond/tests/
+  monitoring:
+    success_rate_threshold: 0.99
+    latency_p95_ms: 500
+    alert_on_degradation: true
+  deployment:
+    environment: production
+    rollout_strategy: blue-green
+    rollback_trigger: "success_rate drops below 0.95 over 5 minutes"
+
+changelog:
+  - version: 3.0.0
+    date: 2026-04-10
+    changes: Initial manifest declaration using rbx-harness manifest schema
+    approved_by: platform@rbxsystems.com
