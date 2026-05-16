@@ -136,16 +136,28 @@ The CLI is the primary integration point with **Éden** (Internal Development Pl
 
 ---
 
-## Relation to the Thalamus mediation layer
+## Relation to Thalamus (the AI control plane)
 
-Thalamus is the runtime router — it receives signals from the outside world and routes them to the appropriate agent's control loop. The harness runtime and Thalamus are complementary:
+Thalamus is the **semantic control layer for AI traffic** (canonical
+definition: `thalamus-core`,
+`docs/adr/ADR-0001-thalamus-as-semantic-control-layer.md`). It applies policy,
+context authorization, validation, audit, and evaluation before and after
+AI-mediated calls. It decides and validates; it does not transport bytes. The
+transport (proxy, routing, rate limits) is the replaceable data plane below
+Thalamus (Agentgateway/LiteLLM/etc.). The Thalamus protocol in
+`spec/protocol.md` is the agent-facing view of that control plane.
+
+The harness runtime and Thalamus are complementary:
 
 ```
-External Signal
+Inbound message (via Thalamus protocol)
       │
       ▼
-  Thalamus                 ← routes signals, normalizes format, enforces protocol
-      │
+  Thalamus                 ← pre-call: identity, policy, context auth, model/
+      │                       tool selection, budget, routing decision,
+      │                       trace_id/audit_id; delegates transport to the
+      │                       data plane. post-call: schema, risk,
+      │                       hallucination, citations, audit, evaluation
       ▼
 rbx-harness runtime        ← governs execution, enforces permissions, audits
       │
@@ -153,7 +165,8 @@ rbx-harness runtime        ← governs execution, enforces permissions, audits
   Agent Logic              ← domain-specific (Robson engine, Strategos planner, etc.)
 ```
 
-Thalamus owns *what signals arrive*. The harness runtime owns *how they are executed*.
+Thalamus owns *whether a call is allowed, with which context, and whether the
+result is acceptable*. The harness runtime owns *how the agent executes*.
 
 ---
 
