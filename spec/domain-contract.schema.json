@@ -1,0 +1,187 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://rbxsystems.com/schemas/rbx-harness/v0.1/domain-contract",
+  "title": "RBX Agent Domain Contract",
+  "description": "Runtime execution scope and authority for an RBX agent in a given mission or role. Extends the agent manifest with permissions evaluated at mission and session level. Permissions only narrow down the agent hierarchy — they never expand (sub-agent scope non-escalation invariant).",
+  "type": "object",
+  "required": [
+    "agent_id",
+    "domain",
+    "allowed_repositories",
+    "allowed_tools",
+    "allowed_memory_scopes",
+    "allowed_session_types",
+    "authority_level",
+    "can_orchestrate_subagents",
+    "can_modify_code",
+    "can_create_commits",
+    "can_push",
+    "can_deploy",
+    "requires_human_approval_for",
+    "output_types",
+    "forbidden_actions"
+  ],
+  "properties": {
+    "agent_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+-v[0-9]+$",
+      "description": "Must match the agent's manifest.id"
+    },
+    "domain": {
+      "type": "string",
+      "enum": [
+        "code",
+        "architecture",
+        "governance",
+        "commercial",
+        "operations",
+        "support",
+        "research",
+        "writing",
+        "testing",
+        "deployment_readiness"
+      ],
+      "description": "Primary domain. Agent must not accept sessions outside this domain without explicit orchestrator authorization."
+    },
+    "allowed_repositories": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Git repository names this agent may access. Empty means read-only access to no repositories.",
+      "uniqueItems": true
+    },
+    "allowed_tools": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Tool IDs this agent may invoke. Any tool not listed is blocked by the Sandbox Gate.",
+      "uniqueItems": true
+    },
+    "allowed_memory_scopes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["ephemeral", "short_term", "medium_term", "long_term_canonical"]
+      },
+      "description": "Memory scopes this agent may read from and write to.",
+      "uniqueItems": true
+    },
+    "allowed_session_types": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "planning",
+          "research",
+          "architecture",
+          "coding",
+          "review",
+          "testing",
+          "summarization",
+          "writing",
+          "deployment_readiness",
+          "incident_analysis",
+          "commercial",
+          "support",
+          "governance"
+        ]
+      },
+      "description": "Session types this agent may operate in.",
+      "uniqueItems": true
+    },
+    "authority_level": {
+      "type": "string",
+      "enum": ["observer", "advisor", "executor", "orchestrator", "governor"],
+      "description": "Authority ceiling. Effective permission = min(authority_level_ceiling, declared_field). observer=read-only; advisor=recommend only; executor=act within scope; orchestrator=spawn/coordinate; governor=validate/veto."
+    },
+    "can_orchestrate_subagents": {
+      "type": "boolean",
+      "description": "May spawn and coordinate sub-agents. Requires authority_level: orchestrator. Sub-agents receive intersection of orchestrator and sub-agent contracts (scope non-escalation)."
+    },
+    "can_modify_code": {
+      "type": "boolean",
+      "description": "May edit source files in allowed_repositories."
+    },
+    "can_create_commits": {
+      "type": "boolean",
+      "description": "May create local git commits. Requires can_modify_code: true."
+    },
+    "can_push": {
+      "type": "boolean",
+      "description": "May push to remote. Requires can_create_commits: true. Each push also requires explicit per-operation operator authorization in the current message — this field is necessary but not sufficient."
+    },
+    "can_deploy": {
+      "type": "boolean",
+      "description": "May trigger deployment pipelines. Requires can_push: true and a passed human_approval gate declared in requires_human_approval_for."
+    },
+    "requires_human_approval_for": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Action types that always require an explicit human approval gate before execution, regardless of other conditions. Common values: git_push, deploy, merge_to_main, delete_branch.",
+      "uniqueItems": true
+    },
+    "output_types": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Expected output types this agent may produce in this domain. Examples: code_diff, test_results, review_comments, architecture_proposal, adr_draft.",
+      "uniqueItems": true
+    },
+    "forbidden_actions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Actions explicitly prohibited. Not delegatable to sub-agents. Examples: modify_secrets, delete_branch, force_push, approve_own_output.",
+      "uniqueItems": true
+    },
+    "review_requirements": {
+      "type": "object",
+      "description": "Declares which output types require review before being acted on, by whom, and with what minimum reviewer count.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["reviewer_domains", "min_reviewers", "blocking"],
+        "properties": {
+          "reviewer_domains": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Domain(s) the reviewer must belong to."
+          },
+          "min_reviewers": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Minimum number of independent reviewers required."
+          },
+          "blocking": {
+            "type": "boolean",
+            "description": "If true, execution is paused until review completes."
+          }
+        }
+      }
+    },
+    "governance_policy_refs": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "IDs of rbx-governance policies that apply to this contract. Referenced policies must be in 'accepted' status at mission creation time.",
+      "uniqueItems": true
+    },
+    "notes": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "Optional human-readable notes about this contract's scope or constraints."
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "can_push": { "const": true } } },
+      "then": { "properties": { "can_create_commits": { "const": true } } }
+    },
+    {
+      "if": { "properties": { "can_deploy": { "const": true } } },
+      "then": { "properties": { "can_push": { "const": true } } }
+    },
+    {
+      "if": { "properties": { "can_orchestrate_subagents": { "const": true } } },
+      "then": {
+        "properties": {
+          "authority_level": { "enum": ["orchestrator", "governor"] }
+        }
+      }
+    }
+  ]
+}

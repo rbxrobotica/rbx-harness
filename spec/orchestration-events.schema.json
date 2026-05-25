@@ -1,0 +1,499 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://rbxsystems.com/schemas/rbx-harness/v0.1/orchestration-events",
+  "title": "RBX Orchestration Event Schema",
+  "description": "Structured events emitted by the rbx-harness AOP runtime for mission, session, context, step, tool, memory, guard, review, loop, and escalation lifecycle. These events extend the base governance events (spec/governance.schema.json) with orchestration-layer concerns. Consumed by Thalamus for tracing, by Strategos for mission tracking, and by rbx-console for operational visibility. Metadata must never contain secrets, credentials, or PII.",
+  "definitions": {
+    "BaseOrchestrationPayload": {
+      "type": "object",
+      "required": ["trace_id", "severity", "reason"],
+      "properties": {
+        "trace_id": {
+          "type": "string",
+          "description": "ULID linking to the Thalamus trace for the AI call associated with this event, if applicable."
+        },
+        "mission_id": {
+          "type": ["string", "null"],
+          "description": "Mission this event belongs to."
+        },
+        "session_id": {
+          "type": ["string", "null"],
+          "description": "Session this event belongs to."
+        },
+        "prompt_id": {
+          "type": ["string", "null"],
+          "description": "PromptExecutionStep this event belongs to."
+        },
+        "parent_step_id": {
+          "type": ["string", "null"],
+          "description": "Parent step ID, for events within a step spawned by another step."
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["info", "warn", "error", "critical"]
+        },
+        "reason": {
+          "type": "string",
+          "description": "Human-readable summary of why this event was emitted."
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Additional structured context. Must not contain secrets, credentials, or PII."
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "title": "MissionCreated",
+      "properties": {
+        "event_type": { "const": "mission.created" },
+        "payload": {
+          "allOf": [{ "$ref": "#/definitions/BaseOrchestrationPayload" }],
+          "properties": {
+            "mission_type": { "type": "string" },
+            "objective_hash": { "type": "string", "description": "SHA256 of objective text (not the objective itself, to allow non-PII logging)." },
+            "owner_agent_id": { "type": "string" },
+            "step_count": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    {
+      "title": "MissionStarted",
+      "properties": {
+        "event_type": { "const": "mission.started" },
+        "payload": {
+          "allOf": [{ "$ref": "#/definitions/BaseOrchestrationPayload" }],
+          "properties": {
+            "mission_type": { "type": "string" },
+            "owner_agent_id": { "type": "string" },
+            "loop_termination_policy_summary": {
+              "type": "object",
+              "properties": {
+                "max_iterations": { "type": "integer" },
+                "timeout_seconds": { "type": ["integer", "null"] },
+                "max_cost_usd": { "type": ["number", "null"] }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "MissionCompleted",
+      "properties": {
+        "event_type": { "const": "mission.completed" },
+        "payload": {
+          "allOf": [{ "$ref": "#/definitions/BaseOrchestrationPayload" }],
+          "properties": {
+            "steps_executed": { "type": "integer" },
+            "total_duration_seconds": { "type": "number" },
+            "output_refs": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    },
+    {
+      "title": "MissionAborted",
+      "properties": {
+        "event_type": { "const": "mission.aborted" },
+        "payload": {
+          "allOf": [{ "$ref": "#/definitions/BaseOrchestrationPayload" }],
+          "required": ["abort_criterion"],
+          "properties": {
+            "abort_criterion": {
+              "type": "string",
+              "description": "Which abort criterion triggered."
+            },
+            "steps_executed": { "type": "integer" },
+            "last_step_id": { "type": ["string", "null"] }
+          }
+        }
+      }
+    },
+    {
+      "title": "MissionEscalated",
+      "properties": {
+        "event_type": { "const": "mission.escalated" },
+        "payload": {
+          "allOf": [{ "$ref": "#/definitions/BaseOrchestrationPayload" }],
+          "required": ["escalate_to"],
+          "properties": {
+            "escalate_to": { "type": "string", "enum": ["human", "reviewer_agent", "mission_orchestrator"] },
+            "blocking_step_id": { "type": ["string", "null"] },
+            "timeout_before_abort_seconds": { "type": ["integer", "null"] }
+          }
+        }
+      }
+    },
+    {
+      "title": "SessionCreated",
+      "properties": {
+        "event_type": { "const": "session.created" },
+        "payload": {
+          "allOf": [{ "$ref": "#/definitions/BaseOrchestrationPayload" }],
+          "properties": {
+            "session_type": { "type": "string" },
+            "agent_id": { "type": "string" }
+          }
+        }
+      }
+    },
+    {
+      "title": "SessionClosed",
+      "properties": {
+        "event_type": { "const": "session.closed" },
+        "payload": {
+          "allOf": [{ "$ref": "#/definitions/BaseOrchestrationPayload" }],
+          "properties": {
+            "session_type": { "type": "string" },
+            "duration_seconds": { "type": "number" },
+            "outputs_produced": { "type": "integer" }
+          }
+        }
+      }
+    },
+    {
+      "title": "MissionStepStarted",
+      "properties": {
+        "event_type": { "const": "mission.step.started" },
+        "payload": {
+          "allOf": [{ "$ref": "#/definitions/BaseOrchestrationPayload" }],
+          "properties": {
+            "prompt_type": { "type": "string" },
+            "agent_id": { "type": "string" },
+            "execution_order": { "type": "integer" },
+            "inherited_scope": { "type": "boolean", "description": "True when this step's permissions were derived from orchestrator scope intersection." }
+          }
+        }
+      }
+    },
+    {
+      "title": "MissionStepCompleted",
+      "properties": {
+        "event_type": { "const": "mission.step.completed" },
+        "payload": {
+          "allOf": [{ "$ref": "#/definitions/BaseOrchestrationPayload" }],
+          "properties": {
+            "prompt_type": { "type": "string" },
+            "duration_ms": { "type": "integer" },
+            "output_type": { "type": "string" },
+            "output_ref": { "type": ["string", "null"] }
+          }
+        }
+      }
+    },
+    {
+      "title": "MissionStepFailed",
+      "properties": {
+        "event_type": { "const": "mission.step.failed" },
+        "payload": {
+          "allOf": [{ "$ref": "#/definitions/BaseOrchestrationPayload" }],
+          "required": ["failure_reason"],
+          "properties": {
+            "prompt_type": { "type": "string" },
+            "failure_reason": { "type": "string" },
+            "retries_attempted": { "type": "integer" },
+            "escalation_triggered": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    {
+      "title": "ContextBudgetEstimated",
+      "properties": {
+        "event_type": { "const": "context.budget.estimated" },
+        "payload": {
+          "allOf": [{ "$ref": "#/definitions/BaseOrchestrationPayload" }],
+          "properties": {
+            "estimated_tokens": { "type": "integer" },
+            "ceiling_tokens": { "type": "integer" },
+            "utilization_ratio": { "type": "number" },
+            "slot_breakdown": { "type": "object" }
+          }
+        }
+      }
+    },
+    {
+      "title": "ContextBudgetExceeded",
+      "properties": {
+        "event_type": { "const": "context.budget.exceeded" },
+        "payload": {
+          "allOf": [{ "$ref": "#/definitions/BaseOrchestrationPayload" }],
+          "required": ["estimated_tokens", "ceiling_tokens"],
+          "properties": {
+            "estimated_tokens": { "type": "integer" },
+            "ceiling_tokens": { "type": "integer" },
+            "overflow_policy_applied": { "type": "string" },
+            "justification": { "type": ["string", "null"] }
+          }
+        }
+      }
+    },
+    {
+      "title": "ContextBudgetCompressionApplied",
+      "properties": {
+        "event_type": { "const": "context.budget.compression_applied" },
+        "payload": {
+          "allOf": [{ "$ref": "#/definitions/BaseOrchestrationPayload" }],
+          "properties": {
+            "slots_compressed": { "type": "array", "items": { "type": "string" } },
+            "tokens_before": { "type": "integer" },
+            "tokens_after": { "type": "integer" }
+          }
+        }
+      }
+    },
+    {
+      "title": "ToolCallDenied",
+      "properties": {
+        "event_type": { "const": "tool.call.denied" },
+        "payload": {
+          "allOf": [{ "$ref": "#/definitions/BaseOrchestrationPayload" }],
+          "required": ["tool_id", "denial_reason"],
+          "properties": {
+            "tool_id": { "type": "string" },
+            "denial_reason": { "type": "string", "enum": ["not_in_allowed_tools", "forbidden_action", "authority_level_insufficient", "out_of_scope"] }
+          }
+        }
+      }
+    },
+    {
+      "title": "MemoryRead",
+      "properties": {
+        "event_type": { "const": "memory.read" },
+        "payload": {
+          "allOf": [{ "$ref": "#/definitions/BaseOrchestrationPayload" }],
+          "properties": {
+            "memory_id": { "type": "string" },
+            "memory_type": { "type": "string" },
+            "memory_scope": { "type": "string" }
+          }
+        }
+      }
+    },
+    {
+      "title": "MemoryWrite",
+      "properties": {
+        "event_type": { "const": "memory.write" },
+        "payload": {
+          "allOf": [{ "$ref": "#/definitions/BaseOrchestrationPayload" }],
+          "properties": {
+            "memory_id": { "type": "string" },
+            "memory_type": { "type": "string" },
+            "memory_scope": { "type": "string" },
+            "confidence": { "type": "number" }
+          }
+        }
+      }
+    },
+    {
+      "title": "MemoryScopeViolation",
+      "properties": {
+        "event_type": { "const": "memory.scope.violation" },
+        "payload": {
+          "allOf": [{ "$ref": "#/definitions/BaseOrchestrationPayload" }],
+          "required": ["attempted_scope", "allowed_scopes"],
+          "properties": {
+            "attempted_scope": { "type": "string" },
+            "allowed_scopes": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    },
+    {
+      "title": "GuardBlockedAction",
+      "properties": {
+        "event_type": { "const": "guard.blocked_action" },
+        "payload": {
+          "allOf": [{ "$ref": "#/definitions/BaseOrchestrationPayload" }],
+          "required": ["guard_type", "blocked_action"],
+          "properties": {
+            "guard_type": {
+              "type": "string",
+              "enum": [
+                "permission",
+                "behavioral",
+                "context",
+                "output"
+              ],
+              "description": "Which guardrail taxonomy category blocked this action."
+            },
+            "blocked_action": { "type": "string" },
+            "rule_matched": { "type": "string" }
+          }
+        }
+      }
+    },
+    {
+      "title": "GuardSecretInContext",
+      "properties": {
+        "event_type": { "const": "guard.secret_in_context" },
+        "payload": {
+          "allOf": [{ "$ref": "#/definitions/BaseOrchestrationPayload" }],
+          "required": ["detected_in_slot"],
+          "properties": {
+            "detected_in_slot": { "type": "string", "description": "Which context slot the secret pattern was detected in." },
+            "pattern_type": { "type": "string", "description": "Pattern category (e.g., api_key, token, password). Not the actual value." },
+            "action_taken": { "type": "string", "enum": ["item_excluded", "step_halted", "escalated"] }
+          }
+        }
+      }
+    },
+    {
+      "title": "GuardSelfReviewAttempted",
+      "properties": {
+        "event_type": { "const": "guard.self_review_attempted" },
+        "payload": {
+          "allOf": [{ "$ref": "#/definitions/BaseOrchestrationPayload" }],
+          "required": ["reviewer_agent_id", "producer_agent_id"],
+          "properties": {
+            "reviewer_agent_id": { "type": "string" },
+            "producer_agent_id": { "type": "string" },
+            "output_type": { "type": "string" }
+          }
+        }
+      }
+    },
+    {
+      "title": "GuardPermissionEscalationAttempted",
+      "properties": {
+        "event_type": { "const": "guard.permission_escalation_attempted" },
+        "payload": {
+          "allOf": [{ "$ref": "#/definitions/BaseOrchestrationPayload" }],
+          "required": ["sub_agent_id", "orchestrator_id", "escalated_permission"],
+          "properties": {
+            "sub_agent_id": { "type": "string" },
+            "orchestrator_id": { "type": "string" },
+            "escalated_permission": { "type": "string", "description": "Which permission the sub-agent attempted to use that the orchestrator does not have." }
+          }
+        }
+      }
+    },
+    {
+      "title": "HumanApprovalRequired",
+      "properties": {
+        "event_type": { "const": "human_approval.required" },
+        "payload": {
+          "allOf": [{ "$ref": "#/definitions/BaseOrchestrationPayload" }],
+          "required": ["action_type", "blocking"],
+          "properties": {
+            "action_type": { "type": "string" },
+            "blocking": { "type": "boolean" },
+            "sla_seconds": { "type": ["integer", "null"] },
+            "context_summary": { "type": "string" }
+          }
+        }
+      }
+    },
+    {
+      "title": "HumanApprovalReceived",
+      "properties": {
+        "event_type": { "const": "human_approval.received" },
+        "payload": {
+          "allOf": [{ "$ref": "#/definitions/BaseOrchestrationPayload" }],
+          "required": ["action_type", "decision", "reviewer"],
+          "properties": {
+            "action_type": { "type": "string" },
+            "decision": { "type": "string", "enum": ["approved", "rejected", "modified"] },
+            "reviewer": { "type": "string" },
+            "rationale": { "type": ["string", "null"] }
+          }
+        }
+      }
+    },
+    {
+      "title": "ReviewRequired",
+      "properties": {
+        "event_type": { "const": "review.required" },
+        "payload": {
+          "allOf": [{ "$ref": "#/definitions/BaseOrchestrationPayload" }],
+          "required": ["output_type", "producer_agent_id"],
+          "properties": {
+            "output_type": { "type": "string" },
+            "producer_agent_id": { "type": "string" },
+            "reviewer_domains": { "type": "array", "items": { "type": "string" } },
+            "min_reviewers": { "type": "integer", "minimum": 1 },
+            "blocking": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    {
+      "title": "ReviewCompleted",
+      "properties": {
+        "event_type": { "const": "review.completed" },
+        "payload": {
+          "allOf": [{ "$ref": "#/definitions/BaseOrchestrationPayload" }],
+          "required": ["output_type", "reviewer_agent_id", "decision"],
+          "properties": {
+            "output_type": { "type": "string" },
+            "reviewer_agent_id": { "type": "string" },
+            "decision": { "type": "string", "enum": ["approved", "rejected", "approved_with_comments"] },
+            "comments_ref": { "type": ["string", "null"] }
+          }
+        }
+      }
+    },
+    {
+      "title": "LoopTerminationDetected",
+      "properties": {
+        "event_type": { "const": "loop.termination.detected" },
+        "payload": {
+          "allOf": [{ "$ref": "#/definitions/BaseOrchestrationPayload" }],
+          "required": ["detection_window", "repeated_step_ids"],
+          "properties": {
+            "detection_window": { "type": "integer" },
+            "repeated_step_ids": { "type": "array", "items": { "type": "string" } },
+            "repetition_hash": { "type": "string", "description": "Canonical hash of the repeated output pattern." }
+          }
+        }
+      }
+    },
+    {
+      "title": "LoopIterationLimitApproached",
+      "properties": {
+        "event_type": { "const": "loop.iteration.limit_approached" },
+        "payload": {
+          "allOf": [{ "$ref": "#/definitions/BaseOrchestrationPayload" }],
+          "required": ["current_iterations", "max_iterations"],
+          "properties": {
+            "current_iterations": { "type": "integer" },
+            "max_iterations": { "type": "integer" },
+            "utilization_ratio": { "type": "number" }
+          }
+        }
+      }
+    },
+    {
+      "title": "EscalationRequired",
+      "properties": {
+        "event_type": { "const": "escalation.required" },
+        "payload": {
+          "allOf": [{ "$ref": "#/definitions/BaseOrchestrationPayload" }],
+          "required": ["escalate_to", "escalation_trigger"],
+          "properties": {
+            "escalate_to": { "type": "string", "enum": ["human", "reviewer_agent", "mission_orchestrator"] },
+            "escalation_trigger": { "type": "string" },
+            "timeout_before_abort_seconds": { "type": ["integer", "null"] }
+          }
+        }
+      }
+    },
+    {
+      "title": "EscalationResolved",
+      "properties": {
+        "event_type": { "const": "escalation.resolved" },
+        "payload": {
+          "allOf": [{ "$ref": "#/definitions/BaseOrchestrationPayload" }],
+          "required": ["resolution"],
+          "properties": {
+            "resolution": { "type": "string", "enum": ["unblocked", "mission_aborted", "mission_modified"] },
+            "resolved_by": { "type": "string" }
+          }
+        }
+      }
+    }
+  ]
+}

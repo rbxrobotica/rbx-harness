@@ -1,0 +1,128 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://rbxsystems.com/schemas/rbx-harness/v0.1/memory",
+  "title": "RBX Agent Memory Item",
+  "description": "A typed, scoped memory item in the RBX agent memory taxonomy. Memory aids agents in working but is not the source of canonical truth. Agents must verify long_term_canonical items against the current repository or ADR state before acting.",
+  "type": "object",
+  "required": [
+    "memory_id",
+    "type",
+    "source",
+    "scope",
+    "owner",
+    "confidence",
+    "created_at",
+    "status",
+    "content"
+  ],
+  "properties": {
+    "memory_id": {
+      "type": "string",
+      "description": "ULID — unique memory item identifier."
+    },
+    "type": {
+      "type": "string",
+      "enum": ["short_term", "medium_term", "long_term_canonical"],
+      "description": "Memory layer. short_term: task/session scope, TTL minutes-hours. medium_term: project/epic scope, TTL days-weeks. long_term_canonical: institutional truth (ADRs, schemas, registries), permanent until deprecated."
+    },
+    "source": {
+      "type": "string",
+      "description": "Where this memory originated. Examples: agent_id, tool name, document path, ADR ID."
+    },
+    "scope": {
+      "type": "string",
+      "description": "What this memory applies to. Examples: mission/<mission_id>, project/robson, repo/thalamus-core, global."
+    },
+    "owner": {
+      "type": "string",
+      "description": "agent_id or 'operator'. The entity responsible for this memory item's accuracy."
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "Estimated reliability [0,1]. 1.0 = verified canonical truth. <0.5 = uncertain, should be re-verified before acting."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC3339 timestamp of when this memory was created."
+    },
+    "expires_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "RFC3339 expiry timestamp. Null means no expiry (long_term_canonical items are typically null). Expired items are excluded from retrieval and marked deprecated."
+    },
+    "canonical_reference": {
+      "type": ["string", "null"],
+      "description": "Path or URI to the authoritative source for this memory item. Required for long_term_canonical items. Examples: docs/adr/ADR-0001.md, spec/manifest.schema.json, https://rbxsystems.com/schemas/..."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "working", "validated", "canonical", "deprecated"],
+      "description": "Lifecycle status. draft: unverified. working: in use but not validated. validated: verified against canonical source. canonical: is the canonical source. deprecated: superseded or expired."
+    },
+    "content": {
+      "type": "object",
+      "description": "Memory payload. Structure is type-specific. Should not contain secrets, credentials, or PII.",
+      "properties": {
+        "summary": {
+          "type": "string",
+          "description": "Human-readable summary of the memory content."
+        },
+        "data": {
+          "description": "Structured memory data. Schema depends on memory use case."
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Searchable tags for retrieval.",
+          "uniqueItems": true
+        }
+      },
+      "required": ["summary"]
+    },
+    "mission_id": {
+      "type": ["string", "null"],
+      "description": "Mission this memory is associated with, if applicable."
+    },
+    "session_id": {
+      "type": ["string", "null"],
+      "description": "Session this memory was created in, if applicable."
+    },
+    "agent_id": {
+      "type": "string",
+      "description": "agent_id of the agent that created or last updated this memory item."
+    },
+    "verified_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "When this memory was last verified against its canonical_reference. Null means unverified."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "type": { "const": "long_term_canonical" } }
+      },
+      "then": {
+        "required": ["canonical_reference"],
+        "properties": {
+          "canonical_reference": { "type": "string" },
+          "expires_at": { "const": null }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "status": { "const": "canonical" } }
+      },
+      "then": {
+        "required": ["canonical_reference"],
+        "properties": {
+          "canonical_reference": { "type": "string" }
+        }
+      }
+    }
+  ]
+}

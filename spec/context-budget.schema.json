@@ -1,0 +1,150 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://rbxsystems.com/schemas/rbx-harness/v0.1/context-budget",
+  "title": "RBX Context Budget Policy",
+  "description": "Declares the token allocation policy for a session. Enforces that model calls stay within ceiling_ratio of the model's context window, leaving margin for the model's response, tool calls, and retries. Default ceiling: 70%.",
+  "type": "object",
+  "required": [
+    "policy_id",
+    "total_window_tokens",
+    "ceiling_ratio"
+  ],
+  "properties": {
+    "policy_id": {
+      "type": "string",
+      "description": "Unique identifier for this budget policy (ULID or name)."
+    },
+    "total_window_tokens": {
+      "type": "integer",
+      "minimum": 1024,
+      "description": "Declared context window of the model being used for this session (in tokens)."
+    },
+    "ceiling_ratio": {
+      "type": "number",
+      "minimum": 0.1,
+      "maximum": 1.0,
+      "default": 0.7,
+      "description": "Maximum fraction of total_window_tokens that may be used for input. Default 0.7 (70%). Remainder is reserved for model response, tool calls, retries. Exceeding this emits context.budget.exceeded and halts the step."
+    },
+    "tokenizer_hint": {
+      "type": "string",
+      "enum": ["char_div_4", "cl100k_base", "o200k_base", "claude_sonnet", "claude_opus", "unknown"],
+      "default": "char_div_4",
+      "description": "Tokenizer approximation to use for budget estimation. char_div_4 is the default approximation (characters / 4). Future versions will integrate provider-specific tokenizers."
+    },
+    "slot_allocations": {
+      "type": "object",
+      "description": "Per-slot token allocations as a fraction of (ceiling_ratio * total_window_tokens). Values must sum to <= 1.0. Unspecified slots share the remainder.",
+      "properties": {
+        "system_prompt": {
+          "$ref": "#/definitions/SlotAllocation",
+          "description": "System prompt (never compressed)."
+        },
+        "role_prompt": {
+          "$ref": "#/definitions/SlotAllocation",
+          "description": "Role/agent identity prompt (never compressed)."
+        },
+        "tool_definitions": {
+          "$ref": "#/definitions/SlotAllocation",
+          "description": "Tool definitions for tools available in this step. Drop unused tools to reduce this slot."
+        },
+        "governance_instructions": {
+          "$ref": "#/definitions/SlotAllocation",
+          "description": "Governance rules and domain contract constraints (never compressed)."
+        },
+        "conversation_history": {
+          "$ref": "#/definitions/SlotAllocation",
+          "description": "Prior conversation turns. Truncate oldest-first if over limit."
+        },
+        "selected_files": {
+          "$ref": "#/definitions/SlotAllocation",
+          "description": "Source files, ADRs, or documents selected for this step. Summarize if over limit."
+        },
+        "tool_outputs": {
+          "$ref": "#/definitions/SlotAllocation",
+          "description": "Results from prior tool calls. Truncate verbose outputs."
+        },
+        "logs": {
+          "$ref": "#/definitions/SlotAllocation",
+          "description": "Log output passed as context. Hard limit — never exceed."
+        },
+        "diffs": {
+          "$ref": "#/definitions/SlotAllocation",
+          "description": "Code or document diffs. Split across calls if over limit."
+        },
+        "plans": {
+          "$ref": "#/definitions/SlotAllocation",
+          "description": "Execution plans and step summaries. Compress to step summaries if over limit."
+        },
+        "summaries": {
+          "$ref": "#/definitions/SlotAllocation",
+          "description": "Compressed summaries from prior summarization sessions."
+        },
+        "test_outputs": {
+          "$ref": "#/definitions/SlotAllocation",
+          "description": "Test run results. Truncate to failures and first N lines of output."
+        }
+      }
+    },
+    "overflow_policy": {
+      "type": "string",
+      "enum": ["compress_and_continue", "halt_and_escalate", "compress_and_emit_event"],
+      "default": "compress_and_emit_event",
+      "description": "What to do when assembled context exceeds ceiling_ratio after compression. compress_and_emit_event is the default: apply compression, emit context.budget.compression_applied, continue. halt_and_escalate: stop the step and escalate."
+    },
+    "justification_override_allowed": {
+      "type": "boolean",
+      "default": false,
+      "description": "If true, a step may exceed ceiling_ratio when a logged justification event is emitted. Requires context.budget.exceeded to include a reason field. Use only for exceptional cases."
+    }
+  },
+  "definitions": {
+    "SlotAllocation": {
+      "type": "object",
+      "required": ["max_ratio"],
+      "properties": {
+        "max_ratio": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Maximum fraction of the ceiling budget this slot may use."
+        },
+        "compressible": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether this slot's content may be compressed or truncated when over budget."
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Compression priority (higher = compressed last). system_prompt and governance_instructions should be 10 (never compressed)."
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "policy_id": "default-coding-session",
+      "total_window_tokens": 200000,
+      "ceiling_ratio": 0.7,
+      "tokenizer_hint": "claude_sonnet",
+      "overflow_policy": "compress_and_emit_event",
+      "justification_override_allowed": false,
+      "slot_allocations": {
+        "system_prompt":           { "max_ratio": 0.05, "compressible": false, "priority": 10 },
+        "role_prompt":             { "max_ratio": 0.03, "compressible": false, "priority": 10 },
+        "tool_definitions":        { "max_ratio": 0.05, "compressible": true,  "priority": 7  },
+        "governance_instructions": { "max_ratio": 0.03, "compressible": false, "priority": 10 },
+        "conversation_history":    { "max_ratio": 0.15, "compressible": true,  "priority": 3  },
+        "selected_files":          { "max_ratio": 0.20, "compressible": true,  "priority": 5  },
+        "tool_outputs":            { "max_ratio": 0.10, "compressible": true,  "priority": 4  },
+        "logs":                    { "max_ratio": 0.05, "compressible": true,  "priority": 2  },
+        "diffs":                   { "max_ratio": 0.10, "compressible": true,  "priority": 6  },
+        "plans":                   { "max_ratio": 0.05, "compressible": true,  "priority": 6  },
+        "summaries":               { "max_ratio": 0.05, "compressible": true,  "priority": 5  },
+        "test_outputs":            { "max_ratio": 0.05, "compressible": true,  "priority": 3  }
+      }
+    }
+  ]
+}

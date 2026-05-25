@@ -1,0 +1,410 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://rbxsystems.com/schemas/rbx-harness/v0.1/mission-execution",
+  "title": "RBX Mission Execution",
+  "description": "Schemas for Mission, PromptExecutionStep, LoopTerminationPolicy, and related types. A Mission is the top-level unit of governed agent work. Each step is a declared, governed unit with conditions, retry policy, and escalation policy.",
+  "definitions": {
+    "Condition": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Condition type. See MISSION-EXECUTION-GRAPH.md for full list."
+        },
+        "params": {
+          "type": "object",
+          "description": "Type-specific condition parameters."
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable explanation of this condition."
+        }
+      }
+    },
+    "RetryPolicy": {
+      "type": "object",
+      "required": ["max_retries"],
+      "properties": {
+        "max_retries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10,
+          "description": "Maximum retry attempts for this step."
+        },
+        "backoff_strategy": {
+          "type": "string",
+          "enum": ["none", "fixed", "exponential"],
+          "default": "exponential"
+        },
+        "initial_delay_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 1000
+        },
+        "max_delay_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 30000
+        },
+        "retryable_on": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Failure reason codes that trigger a retry. Empty means retry on any failure.",
+          "uniqueItems": true
+        }
+      }
+    },
+    "EscalationPolicy": {
+      "type": "object",
+      "required": ["escalate_to"],
+      "properties": {
+        "escalate_to": {
+          "type": "string",
+          "enum": ["human", "reviewer_agent", "mission_orchestrator"],
+          "description": "Who to escalate to when this policy triggers."
+        },
+        "escalation_reason_template": {
+          "type": "string",
+          "description": "Message template for the escalation notification."
+        },
+        "timeout_before_abort_seconds": {
+          "type": ["integer", "null"],
+          "minimum": 60,
+          "description": "How long to wait for escalation resolution before aborting. Null means wait indefinitely."
+        },
+        "abort_action": {
+          "type": "string",
+          "enum": ["cancel_step", "abort_mission", "pause_mission"],
+          "default": "pause_mission",
+          "description": "What to do if escalation times out without resolution."
+        }
+      }
+    },
+    "LoopTerminationPolicy": {
+      "type": "object",
+      "required": [
+        "max_iterations",
+        "max_retries_per_step",
+        "max_context_budget_ratio",
+        "completion_criteria",
+        "abort_criteria"
+      ],
+      "properties": {
+        "max_iterations": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500,
+          "default": 50,
+          "description": "Maximum total steps across the entire mission."
+        },
+        "max_retries_per_step": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10,
+          "default": 3,
+          "description": "Maximum retry attempts for any single step."
+        },
+        "max_context_budget_ratio": {
+          "type": "number",
+          "minimum": 0.1,
+          "maximum": 1.0,
+          "default": 0.9,
+          "description": "Maximum cumulative fraction of context budget that may be consumed across the mission."
+        },
+        "max_cost_usd": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "description": "Optional cost ceiling in USD. Null means no limit."
+        },
+        "timeout_seconds": {
+          "type": ["integer", "null"],
+          "minimum": 60,
+          "description": "Wall-clock timeout for the entire mission in seconds. Null means no timeout."
+        },
+        "loop_detection_window": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 20,
+          "default": 5,
+          "description": "Number of consecutive steps to check for repetitive output. If the same effective output appears this many times consecutively, loop.termination.detected is emitted."
+        },
+        "completion_criteria": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Condition" },
+          "minItems": 1,
+          "description": "Conditions that constitute successful mission completion. All must be satisfied."
+        },
+        "abort_criteria": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Condition" },
+          "description": "Conditions that trigger immediate mission abort. Any one is sufficient."
+        },
+        "escalation_policy": {
+          "$ref": "#/definitions/EscalationPolicy",
+          "description": "Escalation behavior when limits are approached but not yet reached."
+        }
+      }
+    },
+    "PromptExecutionStep": {
+      "type": "object",
+      "required": [
+        "prompt_id",
+        "mission_id",
+        "session_id",
+        "agent_id",
+        "prompt_type",
+        "expected_output_type",
+        "execution_order",
+        "status"
+      ],
+      "properties": {
+        "prompt_id": {
+          "type": "string",
+          "description": "ULID — unique step identifier."
+        },
+        "mission_id": {
+          "type": "string",
+          "description": "Parent mission."
+        },
+        "session_id": {
+          "type": "string",
+          "description": "Session this step runs in."
+        },
+        "agent_id": {
+          "type": "string",
+          "description": "Agent responsible for this step."
+        },
+        "prompt_type": {
+          "type": "string",
+          "enum": [
+            "plan",
+            "research",
+            "inspect",
+            "implement",
+            "test",
+            "review",
+            "summarize",
+            "decide",
+            "approve",
+            "deploy_readiness",
+            "rollback_analysis",
+            "commercial_draft",
+            "support_draft"
+          ],
+          "description": "Type of work this step performs."
+        },
+        "input_context_refs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "IDs of context items (files, memory items, step output_refs) needed as input. Minimum necessary principle: only list what is actually required for this step.",
+          "uniqueItems": true
+        },
+        "expected_output_type": {
+          "type": "string",
+          "description": "What this step must produce (e.g., code_diff, test_results, summary, architecture_proposal)."
+        },
+        "dependencies": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "prompt_id values of steps that must be in 'completed' status before this step may begin.",
+          "uniqueItems": true
+        },
+        "execution_order": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Ordinal position within the dependency-resolved execution graph."
+        },
+        "execution_mode": {
+          "type": "string",
+          "enum": ["linear", "dependency_graph", "parallel_safe", "human_gated", "reviewer_gated"],
+          "default": "dependency_graph",
+          "description": "How this step relates to others in the graph."
+        },
+        "preconditions": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Condition" },
+          "description": "Must all be true before the step begins. Failure moves step to 'blocked'."
+        },
+        "postconditions": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Condition" },
+          "description": "Must all be true after the step completes. Failure triggers retry or escalation."
+        },
+        "stop_conditions": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Condition" },
+          "description": "If any becomes true during execution, halt the step immediately."
+        },
+        "retry_policy": {
+          "$ref": "#/definitions/RetryPolicy"
+        },
+        "escalation_policy": {
+          "$ref": "#/definitions/EscalationPolicy"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "running", "completed", "failed", "blocked", "skipped", "cancelled"],
+          "description": "Current step lifecycle status."
+        },
+        "trace_id": {
+          "type": ["string", "null"],
+          "description": "Thalamus trace ID for the AI call made in this step."
+        },
+        "started_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "completed_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "output_ref": {
+          "type": ["string", "null"],
+          "description": "Reference to the output produced by this step."
+        },
+        "failure_reason": {
+          "type": ["string", "null"],
+          "description": "Human-readable failure reason if status is 'failed' or 'blocked'."
+        }
+      }
+    }
+  },
+  "title": "Mission",
+  "description": "Top-level governed mission instance.",
+  "type": "object",
+  "required": [
+    "mission_id",
+    "name",
+    "mission_type",
+    "objective",
+    "owner_agent_id",
+    "context_budget_policy_id",
+    "loop_termination_policy",
+    "created_at",
+    "status",
+    "steps"
+  ],
+  "properties": {
+    "mission_id": {
+      "type": "string",
+      "description": "ULID — unique mission identifier."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 200,
+      "description": "Human-readable mission name."
+    },
+    "mission_type": {
+      "type": "string",
+      "enum": [
+        "implement",
+        "research",
+        "review",
+        "architecture",
+        "test",
+        "summarize",
+        "governance",
+        "deployment_readiness",
+        "incident_analysis",
+        "commercial",
+        "support"
+      ]
+    },
+    "objective": {
+      "type": "string",
+      "minLength": 10,
+      "description": "What this mission is trying to accomplish. Must be specific enough to evaluate completion_criteria against."
+    },
+    "scope": {
+      "type": "object",
+      "properties": {
+        "repositories": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "domains": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "out_of_scope": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Explicitly out-of-scope items. Helps agents avoid scope creep.",
+          "uniqueItems": true
+        }
+      }
+    },
+    "constraints": {
+      "type": "object",
+      "properties": {
+        "budget_usd": { "type": ["number", "null"] },
+        "deadline": { "type": ["string", "null"], "format": "date-time" },
+        "forbidden_actions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "notes": { "type": "string" }
+      }
+    },
+    "owner_agent_id": {
+      "type": "string",
+      "description": "Mission Orchestrator agent ID."
+    },
+    "context_budget_policy_id": {
+      "type": "string",
+      "description": "Which ContextBudgetPolicy applies to sessions in this mission."
+    },
+    "loop_termination_policy": {
+      "$ref": "#/definitions/LoopTerminationPolicy"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "started_at": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "completed_at": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["pending", "running", "paused", "blocked", "completed", "aborted", "escalated"]
+    },
+    "parent_mission_id": {
+      "type": ["string", "null"],
+      "description": "For sub-missions spawned by an orchestrator."
+    },
+    "steps": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/PromptExecutionStep" },
+      "description": "Ordered execution graph. Steps with no dependencies and execution_mode=linear run in execution_order sequence."
+    },
+    "completion_evidence": {
+      "type": "object",
+      "description": "Links to outputs produced, reviews completed, and approval records when the mission completes.",
+      "properties": {
+        "output_refs": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "review_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "approval_event_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "summary": { "type": "string" }
+      }
+    }
+  }
+}

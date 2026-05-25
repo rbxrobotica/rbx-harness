@@ -1,0 +1,149 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://rbxsystems.com/schemas/rbx-harness/v0.1/session",
+  "title": "RBX Agent Session",
+  "description": "An isolated execution context for one session type within a mission. Sessions do not share raw context — only what is explicitly passed through declared outputs. Each session type carries specific context constraints to prevent noise contamination.",
+  "type": "object",
+  "required": [
+    "session_id",
+    "mission_id",
+    "session_type",
+    "agent_id",
+    "context_budget_policy_id",
+    "allowed_tools",
+    "memory_scopes",
+    "expected_outputs",
+    "retention_policy",
+    "status"
+  ],
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "description": "ULID — unique session identifier."
+    },
+    "mission_id": {
+      "type": "string",
+      "description": "Parent mission this session belongs to."
+    },
+    "session_type": {
+      "type": "string",
+      "enum": [
+        "planning",
+        "research",
+        "architecture",
+        "coding",
+        "review",
+        "testing",
+        "summarization",
+        "writing",
+        "deployment_readiness",
+        "incident_analysis",
+        "commercial",
+        "support",
+        "governance"
+      ],
+      "description": "Session type determines what context is appropriate and what must be excluded. Each type has specific carries/must-not-carry constraints documented in MISSION-EXECUTION-GRAPH.md."
+    },
+    "agent_id": {
+      "type": "string",
+      "description": "Agent operating in this session. Must match the agent's domain contract for the session_type."
+    },
+    "orchestrator_id": {
+      "type": ["string", "null"],
+      "description": "agent_id of the Mission Orchestrator that created this session, if applicable."
+    },
+    "context_budget_policy_id": {
+      "type": "string",
+      "description": "ID of the ContextBudgetPolicy that governs token allocation in this session."
+    },
+    "allowed_tools": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Tools available in this session. Must be a subset of the agent's domain contract allowed_tools.",
+      "uniqueItems": true
+    },
+    "memory_scopes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["ephemeral", "short_term", "medium_term", "long_term_canonical"]
+      },
+      "description": "Memory scopes accessible in this session. Must be a subset of the agent's domain contract allowed_memory_scopes.",
+      "uniqueItems": true
+    },
+    "expected_outputs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["output_type", "required"],
+        "properties": {
+          "output_type": {
+            "type": "string",
+            "description": "Expected output type (e.g., code_diff, test_results, summary, architecture_proposal)."
+          },
+          "required": {
+            "type": "boolean",
+            "description": "If true, session is not considered complete without this output."
+          },
+          "output_ref": {
+            "type": ["string", "null"],
+            "description": "Reference to the produced output once available."
+          }
+        }
+      },
+      "description": "Outputs this session must produce. Used for session completion evaluation."
+    },
+    "retention_policy": {
+      "type": "object",
+      "required": ["retain_outputs", "raw_history_ttl_hours"],
+      "properties": {
+        "retain_outputs": {
+          "type": "boolean",
+          "description": "If true, session outputs are retained for use by subsequent sessions."
+        },
+        "raw_history_ttl_hours": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "How long to retain raw conversation history in hours. Null means retain indefinitely. 0 means discard after session closes."
+        },
+        "summarize_on_close": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, a summarization step is automatically appended before the session closes, compressing history into a memory item."
+        }
+      }
+    },
+    "parent_session_id": {
+      "type": ["string", "null"],
+      "description": "Session ID of the parent session, if this session was spawned from another (e.g., a coding session spawned from a planning session)."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["created", "running", "paused", "closed", "expired", "aborted"],
+      "description": "Session lifecycle status."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "started_at": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "closed_at": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "expires_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "Optional session expiry. Expired sessions emit session.expired and are closed."
+    },
+    "context_items_loaded": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "IDs of context items (files, memory items, step outputs) loaded into this session. Tracked for audit and context budget accounting.",
+      "uniqueItems": true
+    }
+  }
+}
