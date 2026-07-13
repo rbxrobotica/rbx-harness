@@ -101,7 +101,7 @@ The control loop specification in `runtime/loop/spec.md` is derived from [Robson
 |---|---|
 | **Robson** | Origin of the control loop spec. Will adopt rbx-harness runtime crate when available |
 | **Strategos** | Origin of the manifest and governance schemas. Will register agents via rbx-harness manifest |
-| **Thalamus** | Implements the signal mediation protocol defined in `spec/protocol.md` |
+| **Thalamus** | The semantic control layer for AI traffic (canonical: `thalamus-core`, ADR-0001). Implements the agent-facing protocol in `spec/protocol.md`; may mediate model payloads inline through BackendPort for enforcement, but does not host inference or own provider transport |
 | **Éden** | IDP that uses the CLI to scaffold new agents and register them in the catalog |
 
 ---

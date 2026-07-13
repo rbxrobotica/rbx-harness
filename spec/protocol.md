@@ -5,6 +5,16 @@
 
 ---
 
+> **Definition note (2026-07-13).** Thalamus is the **semantic control layer
+> for AI traffic** (canonical: `thalamus-core`,
+> `docs/adr/ADR-0001-thalamus-as-semantic-control-layer.md`). This protocol is
+> the agent-facing contract with that control plane. Thalamus decides
+> (pre-call) and validates (post-call); it is not the model, not a provider
+> transport owner, and not Agentgateway. In inline mediated mode it may carry
+> model payloads through BackendPort as an enforcement path. The envelope,
+> `trace_id`, governance block, human-review deferral, and OTLP integration below
+> are all consistent with the control-plane model.
+
 ## Overview
 
 The Thalamus Protocol defines how agents communicate with the Thalamus mediation layer. It is transport-agnostic at the envelope level (HTTP/2 + JSON is the reference implementation) but the message format is the contract.
