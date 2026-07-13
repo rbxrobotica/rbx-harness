@@ -138,7 +138,9 @@ The CLI is the primary integration point with **Éden** (Internal Development Pl
 
 ## Relation to the Thalamus mediation layer
 
-Thalamus is the runtime router — it receives signals from the outside world and routes them to the appropriate agent's control loop. The harness runtime and Thalamus are complementary:
+Thalamus is the **semantic control layer for AI traffic** (canonical definition: `thalamus-core`, `docs/adr/ADR-0001-thalamus-as-semantic-control-layer.md`). It applies policy, context authorization, validation, audit, and evaluation before and after AI-mediated calls. In inline mediated mode, Thalamus may carry model payloads as an enforcement point through BackendPort. It does not host inference or own provider-specific transport. The Thalamus protocol in `spec/protocol.md` is the agent-facing view of that control plane.
+
+The harness runtime and Thalamus are complementary:
 
 ```
 External Signal
